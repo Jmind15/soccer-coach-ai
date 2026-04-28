@@ -2,7 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import re
 import time
-from fpdf import FPDF # fpdf2 pour le support UTF-8 nativement
+from fpdf import FPDF # fpdf2 
 import io
 import os # Pour récupérer la clé API de Render
 
@@ -19,6 +19,7 @@ elif "GEMINI_API_KEY" in os.environ:
 
 if not API_KEY:
     st.error("⚠️ Clé API non configurée.")
+    st.info("Configurez la clé `GEMINI_API_KEY` dans les Secrets de Streamlit Cloud ou les variables d'environnement de Render.")
     st.stop()
 
 genai.configure(api_key=API_KEY)
@@ -29,7 +30,7 @@ model_img = genai.GenerativeModel('gemini-3.1-flash-image-preview')
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="Coach AI Pro - PDF Fix UTF-8",
+    page_title="Coach AI Pro - PDF Final Fix",
     page_icon="⚽",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -116,51 +117,66 @@ def decouper_seance(texte_complet, num_players):
             
     return workshops
 
-def clean_markdown_for_pdf(text):
-    """Nettoie le Markdown basique pour le PDF et corrige l'apostrophe typographique."""
-    cleaned = text.replace("**", "").replace("*", "-")
-    cleaned = cleaned.replace("’", "'") # Correction de l'apostrophe courbe
-    return cleaned
+def clean_for_pdf(text):
+    """
+    Nettoie le texte pour le PDF : enlève le Markdown basique 
+    et remplace les caractères typographiques complexes par leurs équivalents Latin-1.
+    """
+    # Nettoyage Markdown
+    text = text.replace("**", "").replace("*", "-")
+    # Remplacement des guillemets et apostrophes courbes (UTF-8 complexes)
+    text = text.replace("’", "'").replace("‘", "'")
+    text = text.replace("“", '"').replace("”", '"')
+    text = text.replace("œ", "oe").replace("Œ", "Oe")
+    # Enlève d'autres symboles bizarres si Gemini en génère
+    text = text.encode('ascii', 'ignore').decode('ascii') 
+    return text
 
-# --- FONCTION DE GÉNÉRATION PDF CORRIGÉE (UTF-8) ---
+# --- FONCTION DE GÉNÉRATION PDF CORRIGÉE (UTF-8 Fiable) ---
 def creer_pdf_seance(intro, ateliers, obj, joueurs):
-    """Génère un PDF structuré supportant l'UTF-8 complet (français typographique)."""
-    # fpdf2 : NotoSans est incluse et supporte l'UTF-8
+    """Génère un PDF structuré supportant le français standard."""
+    # Création du PDF
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     
     # Page 1 : Titre et Intro
     pdf.add_page()
     
-    # Utilisation de NotoSans (standard) pour un support UTF-8 robuste
-    pdf.set_font("NotoSans", 'B', 16)
-    pdf.cell(0, 10, f"Séance de Soccer : {obj}", ln=True, align='C')
+    # Utilisation forcée de Helvetica (standard) avec un nettoyage préventif
+    pdf.set_font("Helvetica", 'B', 16)
+    # Nettoyage pour le titre
+    clean_obj = clean_for_pdf(obj)
+    pdf.cell(0, 10, f"Seance de Soccer : {clean_obj}", ln=True, align='C')
     
-    pdf.set_font("NotoSans", 'I', 12)
-    pdf.cell(0, 10, f"Catégorie: U13+ | Effectif: {joueurs} joueurs", ln=True, align='C')
+    pdf.set_font("Helvetica", 'I', 12)
+    pdf.cell(0, 10, f"Categorie: U13+ | Effectif: {joueurs} joueurs", ln=True, align='C')
     pdf.ln(10)
     
-    pdf.set_font("NotoSans", size=11)
-    # Nettoyage Markdown et apostrophes
-    pdf.multi_cell(0, 6, clean_markdown_for_pdf(intro))
+    # Introduction
+    pdf.set_font("Helvetica", size=11)
+    # Nettoyage complet
+    pdf.multi_cell(0, 6, clean_for_pdf(intro))
     pdf.ln(10)
     
     # Pages suivantes : Un atelier par page
     for workshop in ateliers:
         pdf.add_page()
         
-        pdf.set_font("NotoSans", 'B', 14)
-        pdf.set_text_color(0, 123, 255) # Bleu pro
-        pdf.cell(0, 10, workshop['titre'], ln=True)
+        # Titre atelier (Bold + Couleur Bleu Pro)
+        pdf.set_font("Helvetica", 'B', 14)
+        pdf.set_text_color(0, 123, 255) 
+        pdf.cell(0, 10, clean_for_pdf(workshop['titre']), ln=True)
         
-        pdf.set_text_color(0, 0, 0) # Retour au noir
-        pdf.set_font("NotoSans", size=11)
+        # Texte atelier (Retour noir)
+        pdf.set_text_color(0, 0, 0) 
+        pdf.set_font("Helvetica", size=11)
         pdf.ln(2)
         
-        # Nettoyage Markdown et apostrophes pour le texte
-        pdf.multi_cell(0, 6, clean_markdown_for_pdf(workshop['texte']))
+        # Nettoyage complet du texte de l'atelier
+        pdf.multi_cell(0, 6, clean_for_pdf(workshop['texte']))
         pdf.ln(5)
         
+        # Image
         if workshop['img_bytes']:
             img_file = io.BytesIO(workshop['img_bytes'])
             try:
@@ -201,7 +217,7 @@ if gen_all:
 
 # --- ZONE PRINCIPALE ---
 st.title("⚽ Coach AI Pro")
-st.caption("Assistant tactique multimodal pour les entraîneurs U13+")
+st.caption("Assistant tactique multimodal | Déploiement Sécurisé")
 
 if st.session_state.workshops_data:
     if st.session_state.full_session_plan:
@@ -229,7 +245,7 @@ if st.session_state.workshops_data:
     st.subheader("📥 Exporter la séance")
     
     try:
-        # Génération du PDF UTF-8
+        # Génération du PDF
         with st.spinner("Création du PDF complet (texte + images)..."):
             pdf_bytes = creer_pdf_seance(
                 st.session_state.full_session_plan,
@@ -246,10 +262,11 @@ if st.session_state.workshops_data:
         )
     except Exception as e:
         st.error(f"Erreur lors de la préparation du PDF : {e}")
+        st.info("Le PDF moderne requiert la bibliothèque 'fpdf2' (pip install fpdf2).")
 
 else:
     # Accueil mobile-friendly
-    st.info(f"👋 Bienvenue Coach ! Configurez la séance à gauche pour commencer.")
+    st.info(f"👋 Coach ! Configurez la séance à gauche pour commencer.")
 
 # --- FOOTER ---
-st.caption("Mobile-Friendly | Gemini 3 & Gemini 3.1 Multi-Images | fpdf2 UTF-8")
+st.caption("Mobile-Friendly | Déploiement Sécurisé GitHub | fpdf2 UTF-8 Fix")
