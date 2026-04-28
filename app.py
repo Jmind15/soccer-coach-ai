@@ -8,7 +8,6 @@ import os # Pour récupérer la clé API de Render
 
 # --- CONFIGURATION API (SÉCURISÉE) ---
 # N'écrivez jamais votre clé API ici.
-# Ce code va chercher la clé de manière sécurisée selon la plateforme.
 API_KEY = None
 
 # Plan A : Pour Streamlit Cloud
@@ -20,12 +19,6 @@ elif "GEMINI_API_KEY" in os.environ:
 
 if not API_KEY:
     st.error("⚠️ Clé API non configurée.")
-    st.info("""
-    **Comment configurer la clé API de manière sécurisée :**
-    - **Streamlit Cloud :** Dans 'Advanced Settings > Secrets', ajoutez: `GEMINI_API_KEY = "VotreClefICI"`
-    - **Render :** Dans 'Environment Variables', ajoutez Key: `GEMINI_API_KEY`, Value: `VotreClefICI`
-    - **Local :** Créez un fichier `.env` ou un dossier `.streamlit/secrets.toml`
-    """)
     st.stop()
 
 genai.configure(api_key=API_KEY)
@@ -36,7 +29,7 @@ model_img = genai.GenerativeModel('gemini-3.1-flash-image-preview')
 
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="Coach AI Pro - U13+",
+    page_title="Coach AI Pro - PDF Fix UTF-8",
     page_icon="⚽",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -123,37 +116,61 @@ def decouper_seance(texte_complet, num_players):
             
     return workshops
 
+def clean_markdown_for_pdf(text):
+    """Nettoie le Markdown basique pour le PDF et corrige l'apostrophe typographique."""
+    cleaned = text.replace("**", "").replace("*", "-")
+    cleaned = cleaned.replace("’", "'") # Correction de l'apostrophe courbe
+    return cleaned
+
+# --- FONCTION DE GÉNÉRATION PDF CORRIGÉE (UTF-8) ---
 def creer_pdf_seance(intro, ateliers, obj, joueurs):
+    """Génère un PDF structuré supportant l'UTF-8 complet (français typographique)."""
+    # fpdf2 : NotoSans est incluse et supporte l'UTF-8
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Page 1 : Titre et Intro
     pdf.add_page()
-    pdf.set_font("Helvetica", 'B', 16)
+    
+    # Utilisation de NotoSans (standard) pour un support UTF-8 robuste
+    pdf.set_font("NotoSans", 'B', 16)
     pdf.cell(0, 10, f"Séance de Soccer : {obj}", ln=True, align='C')
-    pdf.set_font("Helvetica", 'I', 12)
-    pdf.cell(0, 10, f"Effectif: {joueurs} joueurs", ln=True, align='C')
-    pdf.ln(10)
-    pdf.set_font("Helvetica", size=11)
-    # Remplacement basique des Markdown pour le PDF
-    pdf.multi_cell(0, 6, intro.replace("**", "").replace("*", "-"))
+    
+    pdf.set_font("NotoSans", 'I', 12)
+    pdf.cell(0, 10, f"Catégorie: U13+ | Effectif: {joueurs} joueurs", ln=True, align='C')
     pdf.ln(10)
     
+    pdf.set_font("NotoSans", size=11)
+    # Nettoyage Markdown et apostrophes
+    pdf.multi_cell(0, 6, clean_markdown_for_pdf(intro))
+    pdf.ln(10)
+    
+    # Pages suivantes : Un atelier par page
     for workshop in ateliers:
         pdf.add_page()
-        pdf.set_font("Helvetica", 'B', 14)
-        pdf.set_text_color(0, 123, 255) # Bleu
+        
+        pdf.set_font("NotoSans", 'B', 14)
+        pdf.set_text_color(0, 123, 255) # Bleu pro
         pdf.cell(0, 10, workshop['titre'], ln=True)
-        pdf.set_text_color(0, 0, 0)
-        pdf.set_font("Helvetica", size=11)
+        
+        pdf.set_text_color(0, 0, 0) # Retour au noir
+        pdf.set_font("NotoSans", size=11)
         pdf.ln(2)
-        pdf.multi_cell(0, 6, workshop['texte'].replace("**", "").replace("*", "-"))
+        
+        # Nettoyage Markdown et apostrophes pour le texte
+        pdf.multi_cell(0, 6, clean_markdown_for_pdf(workshop['texte']))
         pdf.ln(5)
+        
         if workshop['img_bytes']:
             img_file = io.BytesIO(workshop['img_bytes'])
             try:
-                pdf.image(img_file, x=30, w=150)
+                # FPDF calcule la hauteur automatiquement si w est spécifié
+                pdf.image(img_file, x=30, w=150) # Image centrée
                 pdf.ln(5)
             except Exception:
                 pass
+            
+    # CORRECTION : Retourner des bytes plutôt qu'un bytearray pour Streamlit
     return bytes(pdf.output())
 
 # --- LOGIQUE DE GÉNÉRATION ---
@@ -165,7 +182,7 @@ if gen_all:
         prompt_txt = f"""
         Coach expert UEFA. Crée une séance de soccer structurée pour {nb_joueurs} joueurs U13+.
         Objectif : {focus}.
-        Structure: 1. Échauffement Dynamique:, 2. Atelier Technique:, 3. Jeu Tactique:, 4. Match à thème:.
+        Structure impérative : 1. Échauffement Dynamique:, 2. Atelier Technique:, 3. Jeu Tactique:, 4. Match à thème:.
         Décris précisément la mise en place pour {nb_joueurs} joueurs. Markdown français.
         """
         try:
@@ -184,30 +201,55 @@ if gen_all:
 
 # --- ZONE PRINCIPALE ---
 st.title("⚽ Coach AI Pro")
+st.caption("Assistant tactique multimodal pour les entraîneurs U13+")
 
 if st.session_state.workshops_data:
     if st.session_state.full_session_plan:
         st.markdown(st.session_state.full_session_plan)
         st.divider()
+
+    # Affichage des ateliers en blocs (Responsive)
     for workshop in st.session_state.workshops_data:
         st.markdown(f'<div class="workshop-block">', unsafe_allow_html=True)
+        # Sur mobile, les colonnes s'empilent automatiquement
         col_txt, col_img = st.columns([3, 2])
+        
         with col_txt:
             st.subheader(workshop['titre'])
             st.markdown(workshop['texte'])
+            
         with col_img:
             if workshop['img_bytes']:
                 st.image(workshop['img_bytes'])
+        
         st.markdown('</div>', unsafe_allow_html=True)
+
+    # Zone de téléchargement
     st.divider()
     st.subheader("📥 Exporter la séance")
+    
     try:
-        pdf_bytes = creer_pdf_seance(st.session_state.full_session_plan, st.session_state.workshops_data, focus, nb_joueurs)
-        st.download_button(label="Télécharger en PDF (UTF-8)", data=pdf_bytes, file_name=f"seance_{focus}.pdf", mime="application/pdf")
+        # Génération du PDF UTF-8
+        with st.spinner("Création du PDF complet (texte + images)..."):
+            pdf_bytes = creer_pdf_seance(
+                st.session_state.full_session_plan,
+                st.session_state.workshops_data,
+                focus,
+                nb_joueurs
+            )
+            
+        st.download_button(
+            label="Télécharger en PDF (Complet)",
+            data=pdf_bytes,
+            file_name=f"seance_soccer_{focus.replace(' ', '_')}.pdf",
+            mime="application/pdf"
+        )
     except Exception as e:
-        st.error(f"Erreur PDF : {e}")
+        st.error(f"Erreur lors de la préparation du PDF : {e}")
+
 else:
-    st.info("👋 Bienvenue Coach ! Configurez la séance à gauche.")
+    # Accueil mobile-friendly
+    st.info(f"👋 Bienvenue Coach ! Configurez la séance à gauche pour commencer.")
 
 # --- FOOTER ---
-st.caption("Mobile-Friendly | Gemini 3 & 3.1 & FPDF2")
+st.caption("Mobile-Friendly | Gemini 3 & Gemini 3.1 Multi-Images | fpdf2 UTF-8")
