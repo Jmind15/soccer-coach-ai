@@ -25,7 +25,7 @@ if not API_KEY:
 genai.configure(api_key=API_KEY)
 
 # Initialisation des modèles
-model_text = genai.GenerativeModel('gemini-3-flash-preview')
+model_text = genai.GenerativeModel('gemini-3.1-flash-lite-preview')
 model_img = genai.GenerativeModel('gemini-3.1-flash-image-preview') 
 
 # --- CONFIGURATION DE LA PAGE ---
