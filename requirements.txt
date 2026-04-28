@@ -1,0 +1,4 @@
+streamlit
+google-generativeai
+fpdf2
+pillow
